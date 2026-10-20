@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OAuthProvider {
+  GOOGLE
+}
+
+enum VideoProvider {
+  YOUTUBE
+  VIMEO
+  DAILYMOTION
+}
+
+enum RoomStatus {
+  WAITING
+  ACTIVE
+  ENDED
+}
+
+enum PlayerStatus {
+  PLAYING
+  PAUSED
+}
+
+model User {
+  id           String  @id @default(cuid())
+  name         String
+  email        String  @unique
+  passwordHash String?
+  avatarUrl    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  oauthAccounts  OAuthAccount[]
+  sessions       Session[]
+  hostedRooms    WatchRoom[]       @relation("RoomHost")
+  participations RoomParticipant[]
+  messages       Message[]
+  updatedStates  WatchState[]      @relation("StateUpdatedBy")
+
+  @@map("users")
+}
+
+model OAuthAccount {
+  id                String        @id @default(cuid())
+  userId            String
+  provider          OAuthProvider
+  providerAccountId String
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("oauth_accounts")
+}
+
+model Session {
+  id               String    @id @default(cuid())
+  userId           String
+  refreshTokenHash String
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+  createdAt        DateTime  @default(now())
+  revokedAt        DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Movie {
+  id            String    @id @default(cuid())
+  tmdbId        Int       @unique
+  title         String
+  originalTitle String?
+  overview      String?
+  posterPath    String?
+  backdropPath  String?
+  releaseDate   DateTime?
+  runtime       Int?
+  voteAverage   Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  videoSources VideoSource[]
+  rooms        WatchRoom[]
+
+  @@index([title])
+  @@map("movies")
+}
+
+model VideoSource {
+  id           String        @id @default(cuid())
+  movieId      String
+  provider     VideoProvider
+  externalId   String
+  title        String?
+  url          String?
+  isEmbeddable Boolean       @default(false)
+  isActive     Boolean       @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movie Movie       @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  rooms WatchRoom[]
+
+  @@unique([provider, externalId])
+  @@index([movieId])
+  @@index([provider])
+  @@map("video_sources")
+}
+
+model WatchRoom {
+  id              String     @id @default(cuid())
+  code            String     @unique
+  hostId          String
+  movieId         String
+  videoSourceId   String
+  title           String?
+  scheduledAt     DateTime?
+  maxParticipants Int?
+  status          RoomStatus @default(WAITING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  host         User              @relation("RoomHost", fields: [hostId], references: [id], onDelete: Cascade)
+  movie        Movie             @relation(fields: [movieId], references: [id], onDelete: Restrict)
+  videoSource  VideoSource       @relation(fields: [videoSourceId], references: [id], onDelete: Restrict)
+  participants RoomParticipant[]
+  watchState   WatchState?
+  messages     Message[]
+
+  @@index([hostId])
+  @@index([movieId])
+  @@index([videoSourceId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@map("watch_rooms")
+}
+
+model RoomParticipant {
+  roomId   String
+  userId   String
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
+
+  room WatchRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, userId])
+  @@index([userId])
+  @@map("room_participants")
+}
+
+model WatchState {
+  id        String       @id @default(cuid())
+  roomId    String       @unique
+  status    PlayerStatus @default(PAUSED)
+  position  Float        @default(0)
+  updatedBy String?
+  updatedAt DateTime     @updatedAt
+
+  room WatchRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User?     @relation("StateUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
+
+  @@index([updatedBy])
+  @@map("watch_states")
+}
+
+model Message {
+  id      String @id @default(cuid())
+  roomId  String
+  userId  String
+  content String
+
+  createdAt DateTime @default(now())
+
+  room WatchRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, createdAt])
+  @@index([userId])
+  @@map("messages")
+}
